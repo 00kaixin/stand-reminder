@@ -59,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }()
 
     private var panelVisible = false
+    /// 这张卡片是从菜单「立即提醒我一次」预览出来的，不是真的到点提醒
+    private var reminderWasManual = false
     private var pauseUntil: Date?
     private var todayCount = 0
     private var countDay = Date()
@@ -447,6 +449,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.visible = true
         // 手动预览不该占掉今天 8 次的名额
         if !manual { todayCount += 1 }
+        reminderWasManual = manual
 
         let minutes = max(prefs.focusMinutes, Int(machine.focusSeconds / 60))
         model.minutes = minutes
@@ -722,10 +725,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // 或者手停够久，才算真休息（见 PresenceMachine.resolveAwaitingRest）。
         // 没坐够阈值就点（比如「立即提醒我一次」的预览卡片）没什么可确认的，
         // claimRest 内部会直接清零。
-        machine.claimRest(now: Date().timeIntervalSince1970, thresholds: thresholds)
+        let claimed = machine.claimRest(now: Date().timeIntervalSince1970,
+                                        thresholds: thresholds,
+                                        force: !reminderWasManual)
         hideReminder()
         syncSnoozeStreak()
         persist()
+        if !claimed {
+            // 只剩预览卡片会走到这里：没坐够阈值，这一轮也没有真实提醒发生过，
+            // 直接清零会让用户以为「点了没用」，所以说明白
+            flashStatus("预览不记这次起身", seconds: 3)
+        }
         updateStatus()
     }
 
