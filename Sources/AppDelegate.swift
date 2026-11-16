@@ -90,6 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var pauseMenuItem: NSMenuItem!
     /// 状态栏当前文案，用来避免每秒重复赋值触发重绘
     private var lastStatusTitle = ""
+    /// 状态栏当前图标，同样只在状态真的变了才换
+    private var lastIconState: StatusIconState?
     /// 状态栏临时播报（打卡、解锁），到点自动恢复常驻文案
     private var statusFlash: String?
     private var statusFlashUntil = Date.distantPast
@@ -113,8 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "figure.walk",
-                                           accessibilityDescription: "歇会儿")
+        statusItem.button?.image = StatusIconState.normal.image
+        statusItem.button?.setAccessibilityLabel("歇会儿")
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.title = " 0m"
 
@@ -1060,6 +1062,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: - 菜单
 
+    /// 菜单栏图标该长什么样。
+    /// 优先级：正在强提醒 > 观察窗口 > 暂停 > 免打扰 > 普通计时。
+    /// 强提醒 / 终极提醒只算「卡片还挂着」的时候——卡片收了，图标回到普通猫。
+    private var currentIconState: StatusIconState {
+        if panelVisible, model.urgency == .ultimate { return .ultimate }
+        if panelVisible, model.urgency == .strong { return .strong }
+        if machine.awaitingRestSince != nil { return .observing }
+        if isPaused() { return .paused }
+        if prefs.inQuietHours() { return .quiet }
+        return .normal
+    }
+
     private func updateStatus() {
         let minutes = Int(machine.focusSeconds / 60)
 
@@ -1089,6 +1103,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if title != lastStatusTitle {
             statusItem.button?.title = title
             lastStatusTitle = title
+        }
+
+        // 图标跟着状态换，同样只在真的变了才写
+        let icon = currentIconState
+        if icon != lastIconState {
+            lastIconState = icon
+            statusItem.button?.image = icon.image
         }
 
         // 数字还在涨的时候，必须说清楚为什么——不然用户只会以为计时坏了。
